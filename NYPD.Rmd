@@ -1,0 +1,208 @@
+---
+title: "NYPD Shooting Incident Data"
+author: "Student123"
+date: "2025-04-24"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stringr)
+library(readr)
+library(tidyverse)
+library(lubridate)
+library(glue)
+library(ggplot2)
+library(scales)
+library(dplyr)
+library(leaflet)
+library(leaflet.extras)
+
+```
+
+## NYPD Shooting Incident Data
+
+This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the 2024. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, the data analysis includes a focus on monthly patterns, geographic distribution, and borough frequency.
+
+When and where in New York City would be a less-dangerous time to visit? Where are shooting incidents frequently occurring and is there an increase in shootings during a particular month?
+
+```{r get_NYPD_data}
+NYPD_data <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+```{r tidy_columns}
+NYPD_data <- NYPD_data %>%
+select(-c(INCIDENT_KEY,X_COORD_CD, Y_COORD_CD, Lon_Lat, LOC_OF_OCCUR_DESC, JURISDICTION_CODE, LOC_CLASSFCTN_DESC, LOCATION_DESC, PERP_RACE, VIC_RACE, PERP_AGE_GROUP, PERP_SEX, VIC_AGE_GROUP, VIC_SEX, PRECINCT))
+```
+```{r date_column}
+NYPD_data <- NYPD_data %>%
+mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+NYPD_data <- NYPD_data %>%
+arrange(OCCUR_DATE, OCCUR_TIME)
+summary(NYPD_data)
+```
+
+
+## NYPD Shootings by Borough
+New York City has five main boroughs: Bronx, Brooklyn, Manhattan, Queens, and Staten Island. The graph shows the number of shootings that occurred in each of the boroughs between January 1, 2006 through December 31, 2024.
+
+```{r BORO_counts}
+boro_counts <- NYPD_data %>%
+count(BORO, sort = TRUE) %>%
+mutate(percentage = percent(n / sum(n), accuracy = 0.1))
+boro_counts
+```
+```{r BORO_plot}
+ggplot(boro_counts, aes(x = BORO, y = n)) +
+geom_bar(stat = "identity", fill = "steelblue") +
+geom_text(aes(label = n), vjust = -0.3, size = 4) +
+labs(title = "Shooting Incidents Count by NY Boroughs",
+x = "BOROUGH",
+y = "Count") +
+theme_minimal()
+```
+```{r NYPD_incident_percentage}
+boro_counts <- NYPD_data %>%
+count(BORO, sort = TRUE) %>%
+mutate(
+percentage = n / sum(n),
+Percent = percent(percentage, accuracy = 1))
+```
+```{r NYPD_incident_plot}
+ggplot(boro_counts, aes(x = "", y = percentage, fill = BORO)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = Percent), position = position_stack(vjust = 0.5), color = "white", size = 4) +
+  labs(title = "Shooting Incident Proportion by NY Borough", fill = "Borough") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r BORO_high_low}
+most_recent_date <- NYPD_data %>%
+summarise(latest = max(OCCUR_DATE, na.rm = TRUE)) %>%
+pull(latest)
+formatted_date <- format(most_recent_date, "%b %d, %Y")
+highest <- boro_counts %>% slice_max(n, n = 1)
+lowest <- boro_counts %>% slice_min(n, n = 1)
+incident_count <- sum(boro_counts$n)
+glue("As of {formatted_date}, of the {incident_count} shooting incidents, the borough with the highest incidents is {highest$BORO} with {highest$n} incidents, while the borough with the lowest incidents is {lowest$BORO} with {lowest$n} incidents.")
+```
+
+## Interactive Heatmap of Incidents
+
+```{r heatmap_of_incidents}
+leaflet(NYPD_data %>% filter(!is.na(Longitude), !is.na(Latitude))) %>%
+addTiles() %>%
+addHeatmap(
+lng = ~Longitude,
+lat = ~Latitude,
+blur = 20,
+max = 0.05,
+radius = 15
+)
+
+```
+
+## Shooting Incidents in New York City by Month
+
+Another analysis is to see the breakdown of which months of the year has more active shooting.
+```{r trend_over_months_plot}
+monthly_totals <- NYPD_data %>%
+  mutate(Month = lubridate::month(OCCUR_DATE, label = TRUE)) %>%
+  count(Month) %>%
+  arrange(desc(n))
+monthly_totals
+
+ggplot(monthly_totals, aes(x = Month, y = n)) +
+  geom_col(fill = "salmon") +
+  geom_text(aes(label = n), vjust = -0.3, size = 4) +
+  labs(
+    title = "Total Shooting Incidents by Month (All Years)",
+    x = "Month",
+    y = "Number of Incidents"
+  ) +
+  theme_minimal()
+
+```
+```{r month_high_low}
+highest_month <- monthly_totals %>% filter(n == max(n))
+lowest_month <- monthly_totals %>% filter(n == min(n))
+incident_count <- sum(monthly_totals$n)
+formatted_date <- NYPD_data %>%
+summarize(max_date = max(OCCUR_DATE, na.rm = TRUE)) %>%
+pull(max_date) %>%
+format("%B %d, %Y")
+glue(
+"As of {formatted_date}, of the {incident_count} shooting incidents,the month with the highest incidents is {highest_month$Month} with {highest_month$n} incidents,while the month with the lowest incidents is {lowest_month$Month} with {lowest_month$n} incidents.")
+```
+
+## Model of Predicted Incidents by Month for Year 2026
+
+A Poisson regression model was used to predict NYPD shooting incidents for each month of 2026.
+
+The trend suggests that shooting incidents vary seasonally, with potential peaks in warmer, Summer months.
+
+A forecast ribbon was added to the plot to show the 95% confidence intervals around the predicted number of shooting incidents for each month of 2026.
+
+```{r prediction_model}
+NYPD_data <- NYPD_data %>%
+  mutate(Month = format(as.Date(OCCUR_DATE), "%b"),
+         Year = as.numeric(format(as.Date(OCCUR_DATE), "%Y")))
+monthly_totals <- NYPD_data %>%
+  count(Month, Year, sort = TRUE)
+poisson_model <- glm(n ~ Month + Year, 
+                     data = monthly_totals, 
+                     family = poisson())
+future_months_2026 <- data.frame(
+  Year = rep(2026, 12),
+  Month = factor(month.abb[1:12], levels = month.abb)
+)
+predictions_with_ci <- predict(poisson_model, 
+                               newdata = future_months_2026, 
+                               type = "response", 
+                               se.fit = TRUE)
+future_months_2026$predicted_incidents <- predictions_with_ci$fit
+future_months_2026$lower_ci <- predictions_with_ci$fit - 1.96 * predictions_with_ci$se.fit
+future_months_2026$upper_ci <- predictions_with_ci$fit + 1.96 * predictions_with_ci$se.fit
+future_months_2026 <- future_months_2026 %>%
+  mutate(Month_Year = paste(Month, Year))
+future_months_2026$Month_Year <- factor(future_months_2026$Month_Year, 
+                                         levels = paste(month.abb, "2026"))
+ggplot(future_months_2026, aes(x = Month_Year, y = predicted_incidents, group = 1)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkred", size = 2) +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), fill = "lightblue", alpha = 0.3) +
+  geom_text(aes(label = round(predicted_incidents, 1)), vjust = -0.5, size = 3) +
+  labs(title = "Prediction Model for January 2026 – December 2026",
+       x = "Month-Year",
+       y = "Predicted Incidents") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+## Potential Data Bias
+
+**Underreporting:** Not all incidents may be reported or classified correctly.
+
+**Geographic Coverage:** Some boroughs may be policed more heavily, leading to higher recorded incidents.
+
+**Data Collection:** Possible inconsistencies in how death counts (e.g., STATISTICAL_MURDER_FLAG) are applied at time of incident or days after incident.
+
+**Sampling:** If filtering only one borough (e.g., Brooklyn), results won’t generalize to other boroughs of different status. Population density and geographic size of boroughs would affect results.
+
+**Modeling**: Using only borough as a predictor ignores many important variables (e.g., socioeconomics, time of day).
+
+**Confirmation Bias:**
+Shooting incidents happen more frequently in summer months, so only focusing on the months with the highest number of incidents to support your belief.
+
+How to Mitigate:
+
+Look at the same model by boroughs and see if the same pattern occurs in the boroughs with the least amount of incidents and if they occur more frequently in Summer Months.
+
+## Conclusion
+
+This analysis and model shows July is the most violent shooting month in New York City with February the least violent. The Brooklyn borough is the most dangerous of the five boroughs in NYC.

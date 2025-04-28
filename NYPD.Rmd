@@ -25,7 +25,11 @@ library(leaflet.extras)
 
 ## NYPD Shooting Incident Data
 
-This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the 2024. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, the data analysis includes a focus on monthly patterns, geographic distribution, and borough frequency.
+This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the 2024.
+
+The data was collected from NYPDs shooting incidents. https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD
+
+Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, the data analysis includes a focus on monthly patterns, geographic distribution, and borough frequency.
 
 When and where in New York City would be a less-dangerous time to visit? Where are shooting incidents frequently occurring and is there an increase in shootings during a particular month?
 

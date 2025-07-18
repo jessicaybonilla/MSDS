@@ -4,3 +4,4 @@ numpy
 altair
 notebook
 vega_datasets
+ipywidgets

@@ -3,3 +3,4 @@ pandas
 numpy
 altair
 notebook
+vega_datasets
